@@ -1,0 +1,1 @@
+# VAE-only generation baseline
