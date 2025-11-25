@@ -1,0 +1,108 @@
+# ==========================================
+# GENERAL
+# ==========================================
+*.DS_Store
+*.log
+*.out
+*.tmp
+*.swp
+*.bak
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment
+venv/
+.env/
+.env*/ 
+*.env
+
+# ==========================================
+# PYTORCH / LIGHTNING
+# ==========================================
+lightning_logs/
+wandb/
+checkpoints/
+*.ckpt
+*.pt
+*.pth
+
+# ==========================================
+# JUPYTER NOTEBOOKS
+# ==========================================
+.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/
+
+# ==========================================
+# DATA
+# ==========================================
+data/raw/
+data/processed/
+data/**/*.csv
+data/**/*.parquet
+data/**/*.npy
+data/**/*.npz
+data/**/*.pkl
+
+# Allow small samples or config files if needed
+!data/README.md
+
+# ==========================================
+# EXPERIMENT OUTPUT
+# ==========================================
+experiments/
+results/
+outputs/
+plots/
+
+# ==========================================
+# CACHE
+# ==========================================
+.cache/
+*.pickle
+*.joblib
+
+# matplotlib cache
+~/.cache/matplotlib/*
+
+# ==========================================
+# OS / EDITOR SPECIFIC
+# ==========================================
+# Mac / Windows
+Thumbs.db
+*.lnk
+
+# VSCode
+.vscode/
+.history/
+*.code-workspace
+
+# PyCharm
+.idea/
+
+# ==========================================
+# BUILD ARTIFACTS
+# ==========================================
+build/
+dist/
+*.egg-info/
+
+# ==========================================
+# LATEX (if writing final report in LaTeX)
+# ==========================================
+*.aux
+*.bbl
+*.blg
+*.toc
+*.lot
+*.lof
+*.out
+*.pdf
+*.synctex.gz
+
+# ==========================================
+# OPTIONAL: ignore PPT files (large)
+# ==========================================
+reports/slides/*.pptx
