@@ -1,6 +1,8 @@
 # compressing-chaos
 
-Basic Folder Structure
+## Basic Folder Structure
+
+```text
 latent-ts-diffusion/
 ├─ README.md
 ├─ LICENSE
@@ -83,5 +85,3 @@ latent-ts-diffusion/
    │  └─ figures/
    └─ slides/
       └─ presentation.pptx
-
-
