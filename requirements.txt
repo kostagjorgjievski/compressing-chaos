@@ -1,0 +1,31 @@
+# Scientific stack
+numpy
+pandas
+scipy
+
+# PyTorch for CUDA 13
+torch
+torchvision
+torchaudio
+
+# Deep learning utilities
+pytorch-lightning
+
+# Time series + baselines
+statsmodels
+pmdarima
+
+# Finance data
+yfinance
+fredapi
+
+# Visualization
+matplotlib
+seaborn
+
+# Dimensionality reduction
+scikit-learn
+
+# Misc
+tqdm
+tensorboard
