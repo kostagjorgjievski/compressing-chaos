@@ -85,6 +85,7 @@ latent-ts-diffusion/
    │  └─ figures/
    └─ slides/
       └─ presentation.pptx
+```
 
 # Environment Setup
 
