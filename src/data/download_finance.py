@@ -4,8 +4,7 @@ from pathlib import Path
 import yfinance as yf
 import pandas as pd
 
-DATA_DIR = Path("data/raw/finance")
-
+DATA_DIR = Path(__file__).parent.parent.parent / "data" / "raw" / "finance"
 
 def download_symbol(symbol: str, start: str = "2000-01-01") -> pd.DataFrame:
     """
