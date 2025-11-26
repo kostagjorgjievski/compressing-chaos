@@ -85,3 +85,148 @@ latent-ts-diffusion/
    │  └─ figures/
    └─ slides/
       └─ presentation.pptx
+
+# Environment Setup
+
+\`\`\`bash
+# 1. Create virtual environment
+python -m venv .venv
+
+# 2. Activate it
+# macOS / Linux
+source .venv/bin/activate
+
+# Windows (PowerShell)
+# .venv\Scripts\Activate.ps1
+
+# 3. Install dependencies
+pip install -r requirements.txt
+\`\`\`
+
+Set PYTHONPATH so that src/... imports work:
+
+\`\`\`bash
+# macOS / Linux
+export PYTHONPATH=$PWD
+
+# Windows (cmd)
+# set PYTHONPATH=%cd%
+
+# Windows (PowerShell)
+# $env:PYTHONPATH = (Get-Location)
+\`\`\`
+
+---
+
+
+---
+
+# Data Pipeline Commands
+
+Download SP500 and VIX daily data (Yahoo Finance) into data/raw/finance/:
+
+\`\`\`bash
+python scripts/download_all_data.py
+\`\`\`
+
+Create normalized SP500 log return windows of length 50:
+
+\`\`\`bash
+python scripts/make_windows.py \
+  --seq_len 50 \
+  --dataset_name sp500_logret
+\`\`\`
+
+Optionally sanity check the processed dataset:
+
+\`\`\`bash
+python scripts/check_dataset.py \
+  --seq_len 50 \
+  --dataset_name sp500_logret \
+  --split train
+\`\`\`
+
+This should print dataset sizes and tensor shapes like [N, 50, 1].
+
+---
+
+# VAE Training and Visualization
+
+Train the time series VAE on SP500 windows:
+
+\`\`\`bash
+python -m src.training.train_vae \
+  --seq_len 50 \
+  --dataset_name sp500_logret \
+  --batch_size 64 \
+  --epochs 30 \
+  --latent_dim 16 \
+  --hidden_dim 64 \
+  --beta 0.05 \
+  --run_name vae_mlp_sp500_L50_lat16_beta0p05
+\`\`\`
+
+This writes checkpoints under:
+
+\`\`\`
+experiments/checkpoints/vae_mlp_sp500_L50_lat16_beta0p05/
+    best_vae.pt
+    last_vae.pt
+\`\`\`
+
+Visualize reconstructions on the test set:
+
+\`\`\`bash
+python scripts/visualize_vae_recon.py \
+  --seq_len 50 \
+  --dataset_name sp500_logret \
+  --ckpt experiments/checkpoints/vae_mlp_sp500_L50_lat16_beta0p05/best_vae.pt \
+  --num_examples 4 \
+  --save_dir experiments/results/vae_recon_sp500_L50
+\`\`\`
+
+This produces PNGs like `vae_recon_idx_000.png` that show real vs reconstructed windows.
+
+---
+
+# Latent Diffusion Training
+
+Train the latent DDPM on VAE latent vectors:
+
+\`\`\`bash
+python -m src.training.train_diffusion \
+  --seq_len 50 \
+  --dataset_name sp500_logret \
+  --batch_size 256 \
+  --epochs 50 \
+  --run_name diffusion_latent_sp500_L50
+\`\`\`
+
+Checkpoints are saved under:
+
+\`\`\`
+experiments/checkpoints/diffusion_latent_sp500_L50/
+    best_diffusion.pt
+    last_diffusion.pt
+\`\`\`
+
+---
+
+# Sampling from Latent Diffusion + VAE Decoding
+
+Generate synthetic SP500 windows:
+
+\`\`\`bash
+python scripts/sample_diffusion_vae.py \
+  --vae_ckpt experiments/checkpoints/vae_mlp_sp500_L50_lat16_beta0p05/best_vae.pt \
+  --diff_ckpt experiments/checkpoints/diffusion_latent_sp500_L50/best_diffusion.pt \
+  --seq_len 50 \
+  --dataset_name sp500_logret \
+  --num_samples 6 \
+  --save_dir experiments/results/diffusion_latent_sp500_L50
+\`\`\`
+
+The script:
+
+- prints basic stats for sampled latents and decoded series  
+- saves images like `real_vs_gen_000.png`, `real_vs_gen_001.png`, etc.  
