@@ -79,21 +79,24 @@ def main():
     save_dir.mkdir(parents=True, exist_ok=True)
 
     best_val = float("inf")
+    kl_warmup_epochs = 10  # linearly ramp beta over these epochs
 
-    # ---------------- training loop ----------------
+    # ----------------- training loop -----------------
     for epoch in range(1, args.epochs + 1):
+        # linearly increase beta from 0 to args.beta
+        current_beta = args.beta * min(1.0, epoch / kl_warmup_epochs)
+
         model.train()
         train_loss = 0.0
         n_train_batches = 0
 
         for batch in train_loader:
-            # dataset returns (x, x)
             x, _ = batch  # x: [B, T, 1]
             x = x.to(device)
 
             optim.zero_grad()
             recon_x, mu, logvar = model(x)
-            loss, logs = vae_loss(recon_x, x, mu, logvar, beta=args.beta)
+            loss, logs = vae_loss(recon_x, x, mu, logvar, beta=current_beta)
             loss.backward()
             optim.step()
 
@@ -102,7 +105,7 @@ def main():
 
         train_loss /= max(n_train_batches, 1)
 
-        # ---------------- validation ----------------
+        # ----------------- validation -----------------
         model.eval()
         val_loss = 0.0
         val_batches = 0
@@ -112,7 +115,7 @@ def main():
                 x = x.to(device)
 
                 recon_x, mu, logvar = model(x)
-                loss, _ = vae_loss(recon_x, x, mu, logvar, beta=args.beta)
+                loss, _ = vae_loss(recon_x, x, mu, logvar, beta=current_beta)
                 val_loss += loss.item()
                 val_batches += 1
 
@@ -120,9 +123,11 @@ def main():
 
         print(
             f"Epoch {epoch:03d}  "
+            f"beta={current_beta:.4f}  "
             f"train_loss={train_loss:.4f}  "
             f"val_loss={val_loss:.4f}"
         )
+
 
         # save best checkpoint
         if val_loss < best_val:
