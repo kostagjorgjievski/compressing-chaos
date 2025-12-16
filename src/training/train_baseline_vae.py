@@ -14,7 +14,13 @@ def parse_args():
     parser = argparse.ArgumentParser()
     # data
     parser.add_argument("--seq_len", type=int, default=50)
-    parser.add_argument("--dataset_name", type=str, default="sp500_logret")
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default="sp500_logret",
+        help="Dataset name. Use 'sp500_logret' for all data, "
+             "'sp500_logret_stress20' for VIX>=20 filtered data, etc."
+    )
     parser.add_argument("--batch_size", type=int, default=64)
 
     # model

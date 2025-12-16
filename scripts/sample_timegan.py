@@ -1,5 +1,5 @@
-# scripts/sample_vae_only.py
-# Sample from VAE-only model (no diffusion) by sampling from prior N(0,I) and decoding
+# scripts/sample_timegan.py
+# Sample from trained TimeGAN model for stress scenario generation
 
 import argparse
 import json
@@ -8,17 +8,17 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import torch
 
-from src.models.baselines.vae_baseline import TimeSeriesVAE, VAEConfig
+from src.models.baselines.timegan_wrapper import TimeGAN, TimeGANConfig
 from src.data.datasets import TimeSeriesWindowDataset
 
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument(
-        "--vae_ckpt",
+        "--timegan_ckpt",
         type=str,
-        default="experiments/checkpoints/vae_baseline_sp500_L50/best_vae.pt",
-        help="Path to trained VAE checkpoint",
+        default="experiments/checkpoints/timegan_baseline_sp500_L50/best_timegan.pt",
+        help="Path to trained TimeGAN checkpoint",
     )
     p.add_argument("--seq_len", type=int, default=50)
     p.add_argument("--dataset_name", type=str, default="sp500_logret")
@@ -27,7 +27,7 @@ def parse_args():
         "--stress_scale",
         type=float,
         default=1.0,
-        help="Stress multiplier for latent variance (>1.0 for extreme scenarios)",
+        help="Stress multiplier for noise variance (>1.0 for extreme scenarios)",
     )
     p.add_argument(
         "--temperature",
@@ -39,13 +39,13 @@ def parse_args():
         "--stress_latent_stats",
         type=str,
         default=None,
-        help="Path to stress latent statistics JSON (from compute_stress_latent_stats.py). "
-             "If provided, samples from N(mu_stress, sigma^2) for directional stress generation.",
+        help="Path to stress latent statistics JSON (optional). "
+             "If provided, uses noise bias for directional stress generation.",
     )
     p.add_argument(
         "--save_dir",
         type=str,
-        default="experiments/results/vae_only_sp500_L50",
+        default="experiments/results/timegan_sp500_L50",
         help="Directory to save generated samples",
     )
     p.add_argument(
@@ -56,29 +56,28 @@ def parse_args():
     return p.parse_args()
 
 
-def load_vae(ckpt_path: Path, device: torch.device) -> TimeSeriesVAE:
-    """Load trained VAE from checkpoint"""
+def load_timegan(ckpt_path: Path, device: torch.device) -> TimeGAN:
+    """Load trained TimeGAN from checkpoint"""
     ckpt = torch.load(ckpt_path, map_location=device)
     cfg_dict = ckpt.get("cfg", {})
 
-    cfg = VAEConfig(
+    cfg = TimeGANConfig(
         input_dim=cfg_dict.get("input_dim", 1),
         seq_len=cfg_dict.get("seq_len", 50),
-        hidden_dim=cfg_dict.get("hidden_dim", 128),
-        latent_dim=cfg_dict.get("latent_dim", 16),
-        num_layers=cfg_dict.get("num_layers", 1),
-        beta=cfg_dict.get("beta", 1.0),
+        hidden_dim=cfg_dict.get("hidden_dim", 24),
+        latent_dim=cfg_dict.get("latent_dim", 24),
+        num_layers=cfg_dict.get("num_layers", 3),
         dropout=cfg_dict.get("dropout", 0.0),
     )
 
-    vae = TimeSeriesVAE(cfg).to(device)
-    vae.load_state_dict(ckpt["state_dict"])
-    vae.eval()
-    return vae
+    timegan = TimeGAN(cfg).to(device)
+    timegan.load_state_dict(ckpt["state_dict"])
+    timegan.eval()
+    return timegan
 
 
 def load_stress_latent_bias(stats_path: Path, device: torch.device) -> torch.Tensor:
-    """Load stress latent mean from statistics JSON"""
+    """Load stress latent mean from statistics JSON (optional for TimeGAN)"""
     with open(stats_path, "r") as f:
         stats = json.load(f)
 
@@ -95,12 +94,12 @@ def main():
     args = parse_args()
     device = torch.device(args.device)
 
-    vae_ckpt = Path(args.vae_ckpt)
+    timegan_ckpt = Path(args.timegan_ckpt)
     save_dir = Path(args.save_dir)
     save_dir.mkdir(parents=True, exist_ok=True)
 
-    print(f"Loading VAE from {vae_ckpt}")
-    vae = load_vae(vae_ckpt, device)
+    print(f"Loading TimeGAN from {timegan_ckpt}")
+    timegan = load_timegan(timegan_ckpt, device)
 
     # Load stress latent bias if provided
     latent_bias = None
@@ -108,7 +107,7 @@ def main():
         stats_path = Path(args.stress_latent_stats)
         latent_bias = load_stress_latent_bias(stats_path, device)
 
-    # -------- Sample from VAE for stress scenarios --------
+    # -------- Sample from TimeGAN for stress scenarios --------
     num = args.num_samples
     stress_type = (
         f"STRESS (scale={args.stress_scale}, temp={args.temperature}"
@@ -118,7 +117,7 @@ def main():
     )
     print(f"Generating {num} samples - Mode: {stress_type}")
     with torch.no_grad():
-        generated_series = vae.sample(
+        generated_series = timegan.sample(
             num_samples=num,
             device=device,
             stress_scale=args.stress_scale,
@@ -159,19 +158,33 @@ def main():
             label=f"Generated ({stress_type})",
             linestyle="--",
         )
-        plt.title(f"Real vs VAE stress scenario #{i}")
+        plt.title(f"Real vs TimeGAN stress scenario #{i}")
         plt.xlabel("Time step")
         plt.ylabel("Normalized log-return")
         plt.legend()
         plt.grid(True)
         plt.tight_layout()
 
-        out_path = save_dir / f"vae_only_gen_{i:03d}.png"
+        out_path = save_dir / f"timegan_gen_{i:03d}.png"
         plt.savefig(out_path)
         plt.close()
         print(f"Saved {out_path}")
 
-    print("Done. Inspect the PNGs to compare VAE-only generation with real data.")
+    # -------- Additional: Plot multiple samples together --------
+    plt.figure(figsize=(10, 5))
+    for i in range(min(num, 20)):  # Plot up to 20 samples
+        plt.plot(t, generated_series[i, :, 0], alpha=0.5, linewidth=0.8)
+    plt.title(f"TimeGAN samples overlay ({stress_type})")
+    plt.xlabel("Time step")
+    plt.ylabel("Normalized log-return")
+    plt.grid(True)
+    plt.tight_layout()
+    overlay_path = save_dir / "timegan_samples_overlay.png"
+    plt.savefig(overlay_path)
+    plt.close()
+    print(f"Saved {overlay_path}")
+
+    print("Done. Inspect the PNGs to compare TimeGAN generation with real data.")
 
 
 if __name__ == "__main__":

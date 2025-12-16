@@ -67,6 +67,46 @@ def load_sp500_returns() -> pd.Series:
     return log_returns
 
 
+def load_vix() -> pd.Series:
+    """
+    Load VIX (CBOE Volatility Index) from CSV.
+
+    Returns a Series with Date index and VIX close values.
+    """
+    csv_path = RAW_DIR / "vix.csv"
+    if not csv_path.exists():
+        raise FileNotFoundError(f"{csv_path} not found. Run scripts/download_all_data.py first.")
+
+    # Read with default header
+    df0 = pd.read_csv(csv_path)
+
+    # Case 1: already has a 'Date' column (clean case)
+    if "Date" in df0.columns:
+        df = df0.copy()
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.set_index("Date")
+
+    # Case 2: Yahoo web-export style
+    elif df0.columns[0] == "Price" and "Date" not in df0.columns:
+        df = pd.read_csv(csv_path, header=0, skiprows=[1, 2])
+        df = df.rename(columns={"Price": "Date"})
+        df["Date"] = pd.to_datetime(df["Date"])
+        df = df.set_index("Date")
+
+    else:
+        raise ValueError(
+            f"Unrecognized CSV format for {csv_path}. "
+            f"Columns: {df0.columns.tolist()}"
+        )
+
+    if "Close" not in df.columns:
+        raise ValueError(f"Expected 'Close' column in {csv_path}, got: {df.columns.tolist()}")
+
+    vix = df["Close"].astype(float)
+    vix.name = "vix"
+    return vix
+
+
 
 
 def create_windows(series: pd.Series, seq_len: int) -> np.ndarray:
@@ -84,6 +124,57 @@ def create_windows(series: pd.Series, seq_len: int) -> np.ndarray:
     ]
     arr = np.stack(windows, axis=0)   # [N, T]
     return arr[..., None]             # [N, T, 1]
+
+
+def create_stress_filtered_windows(
+    returns: pd.Series,
+    vix: pd.Series,
+    seq_len: int,
+    vix_threshold: float = 20.0,
+) -> np.ndarray:
+    """
+    Create windows filtered by VIX stress periods.
+
+    Only includes windows where the ENDING date has VIX >= vix_threshold.
+    This ensures the window contains or leads into a stress period.
+
+    Args:
+        returns: Time series of returns (e.g., S&P 500 log returns)
+        vix: Time series of VIX values
+        seq_len: Window length
+        vix_threshold: Minimum VIX value to consider as "stress" (default: 20)
+
+    Returns:
+        Array of shape [num_stress_windows, seq_len, 1]
+    """
+    # Align returns and VIX by date
+    df = pd.DataFrame({"return": returns, "vix": vix})
+    df = df.dropna()  # Remove any dates where either is missing
+
+    if len(df) < seq_len:
+        raise ValueError(f"Aligned series length {len(df)} is shorter than seq_len {seq_len}")
+
+    # Create windows and filter by VIX at the END of each window
+    stress_windows = []
+    for start in range(len(df) - seq_len + 1):
+        end = start + seq_len
+        window_returns = df["return"].iloc[start:end].values
+        vix_at_end = df["vix"].iloc[end - 1]  # VIX at the last day of window
+
+        if vix_at_end >= vix_threshold:
+            stress_windows.append(window_returns)
+
+    if len(stress_windows) == 0:
+        raise ValueError(
+            f"No stress windows found with VIX >= {vix_threshold}. "
+            f"Try lowering the threshold. VIX range: [{df['vix'].min():.1f}, {df['vix'].max():.1f}]"
+        )
+
+    arr = np.stack(stress_windows, axis=0).astype(np.float32)  # [N, T]
+    print(f"Created {len(stress_windows)} stress windows (VIX >= {vix_threshold}) "
+          f"out of {len(df) - seq_len + 1} total possible windows "
+          f"({100 * len(stress_windows) / (len(df) - seq_len + 1):.1f}%)")
+    return arr[..., None]  # [N, T, 1]
 
 
 def train_val_test_split(
@@ -145,5 +236,87 @@ def make_sp500_windows(seq_len: int = 50) -> None:
     print(f"Saved normalization stats to {stats_path}")
 
 
+def make_sp500_stress_windows(
+    seq_len: int = 50,
+    vix_threshold: float = 20.0,
+    use_full_dataset_normalization: bool = True,
+) -> None:
+    """
+    End-to-end: SP500 log returns filtered by VIX stress periods
+    -> normalized windows saved as .npy + stats.json.
+
+    Args:
+        seq_len: Window length
+        vix_threshold: Minimum VIX value to consider as stress (default: 20)
+                      Common thresholds:
+                      - 15: Elevated volatility
+                      - 20: Moderate stress (recommended baseline)
+                      - 25: High stress
+                      - 30: Extreme stress (2008 crisis, COVID-19)
+        use_full_dataset_normalization: If True, normalize using stats from the FULL dataset
+                                        (not just stress data). This preserves stress magnitude!
+    """
+    PROC_DIR.mkdir(parents=True, exist_ok=True)
+
+    print(f"Loading S&P 500 returns and VIX data...")
+    returns = load_sp500_returns()
+    vix = load_vix()
+
+    print(f"Creating stress-filtered windows (VIX >= {vix_threshold})...")
+    windows = create_stress_filtered_windows(
+        returns=returns,
+        vix=vix,
+        seq_len=seq_len,
+        vix_threshold=vix_threshold,
+    )
+
+    splits = train_val_test_split(windows)
+
+    # CRITICAL: Use normalization stats from FULL dataset, not stress-only
+    if use_full_dataset_normalization:
+        # Load normalization stats from full dataset
+        full_stats_path = PROC_DIR / f"sp500_logret_L{seq_len}_stats.json"
+        if not full_stats_path.exists():
+            print(f"Full dataset stats not found at {full_stats_path}")
+            print("Creating full dataset first...")
+            make_sp500_windows(seq_len=seq_len)
+
+        with open(full_stats_path, "r") as f:
+            stats = json.load(f)
+
+        print(f"Using FULL dataset normalization: mean={stats['mean']:.6f}, std={stats['std']:.6f}")
+
+        # Normalize stress data using FULL dataset stats
+        mean = stats['mean']
+        std = stats['std']
+        norm_splits = {k: (v - mean) / std for k, v in splits.items()}
+
+        # Report stress data statistics BEFORE and AFTER normalization
+        print(f"\nStress data statistics:")
+        print(f"  Before normalization: mean={splits['train'].mean():.6f}, std={splits['train'].std():.6f}")
+        print(f"  After normalization:  mean={norm_splits['train'].mean():.6f}, std={norm_splits['train'].std():.6f}")
+        print(f"  -> Stress data is {norm_splits['train'].std():.2f}x more volatile than normal!")
+    else:
+        # Old behavior: normalize using stress data's own stats
+        norm_splits, stats = normalize_splits(splits)
+        print("Warning: Using stress-only normalization will make stress data look 'normal' (mean≈0, std≈1)")
+
+    # Save arrays with "stress" suffix
+    dataset_name = f"sp500_logret_stress{int(vix_threshold)}"
+    for split_name, arr in norm_splits.items():
+        out_path = PROC_DIR / f"{dataset_name}_L{seq_len}_{split_name}.npy"
+        np.save(out_path, arr)
+        print(f"Saved {split_name} stress windows to {out_path} with shape {arr.shape}")
+
+    # Save normalization stats (same as full dataset)
+    stats_path = PROC_DIR / f"{dataset_name}_L{seq_len}_stats.json"
+    with open(stats_path, "w") as f:
+        json.dump(stats, f, indent=2)
+    print(f"Saved normalization stats to {stats_path}")
+    print(f"\nDataset name for training: '{dataset_name}'")
+
+
 if __name__ == "__main__":
     make_sp500_windows(seq_len=50)
+    # Uncomment to create stress-filtered dataset:
+    # make_sp500_stress_windows(seq_len=50, vix_threshold=20.0)

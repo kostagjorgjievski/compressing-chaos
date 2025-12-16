@@ -81,19 +81,52 @@ class TimeSeriesVAE(nn.Module):
         return recon_x, mu, logvar
 
     @torch.no_grad()
-    def sample(self, num_samples: int, device: torch.device) -> torch.Tensor:
+    def sample(
+        self,
+        num_samples: int,
+        device: torch.device,
+        stress_scale: float = 1.0,
+        temperature: float = 1.0,
+        latent_bias: torch.Tensor = None,
+    ) -> torch.Tensor:
         """
-        Generate samples by sampling from prior N(0, I) and decoding.
+        Generate samples for stress scenario testing.
 
         Args:
             num_samples: Number of samples to generate
             device: Device to generate samples on
+            stress_scale: Multiplier for latent variance (>1.0 for more extreme scenarios)
+                         e.g., 2.0 samples from N(0, 4I) for 2x stress
+            temperature: Sampling temperature (>1.0 increases diversity, <1.0 decreases)
+            latent_bias: Optional bias for latent mean [latent_dim]. If provided, samples
+                        from N(latent_bias, scale^2*I) instead of N(0, scale^2*I).
+                        Use this to generate stress scenarios by providing the mean
+                        latent vector computed from stress-filtered training data.
 
         Returns:
             Generated samples of shape [num_samples, seq_len, input_dim]
+
+        Examples:
+            - Normal generation: stress_scale=1.0, temperature=1.0
+            - Mild stress: stress_scale=1.5, temperature=1.0
+            - Extreme stress: stress_scale=2.5, temperature=1.2
+            - Conservative: stress_scale=1.0, temperature=0.8
+            - Stress with bias: stress_scale=1.5, latent_bias=stress_mean_vector
         """
-        # Sample from standard normal prior
-        z = torch.randn(num_samples, self.cfg.latent_dim, device=device)
+        # Sample from scaled normal distribution for stress testing
+        # z ~ N(latent_bias, (stress_scale * temperature)^2 * I)
+        scale = stress_scale * temperature
+        z = torch.randn(num_samples, self.cfg.latent_dim, device=device) * scale
+
+        # Add latent bias if provided
+        if latent_bias is not None:
+            if latent_bias.shape != (self.cfg.latent_dim,):
+                raise ValueError(
+                    f"latent_bias must have shape [{self.cfg.latent_dim}], "
+                    f"got {latent_bias.shape}"
+                )
+            z = z + latent_bias.to(device)
+
         # Decode to get time series
         samples = self.decode(z)
         return samples
