@@ -1,0 +1,23 @@
+{
+  "complete_data": {
+    "real_data": "data/processed/finance_windows/sp500_logret_L50_test.npy",
+    "models": [
+      {
+        "name": "vae_complete",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_complete/best_model.pt"
+      },
+      {
+        "name": "diffusion_complete",
+        "type": "diffusion",
+        "checkpoint": "experiments/checkpoints/diffusion_complete/best_model.pt",
+        "vae_checkpoint": "experiments/checkpoints/vae_complete/best_model.pt"
+      },
+      {
+        "name": "timegan_complete",
+        "type": "timegan",
+        "checkpoint": "experiments/checkpoints/timegan_complete/best_model.pt"
+      }
+    ]
+  }
+}

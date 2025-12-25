@@ -1,0 +1,31 @@
+{
+  "stress20_data": {
+    "real_data": "data/processed/finance_windows/sp500_logret_stress20_L50_test.npy",
+    "models": [
+      {
+        "name": "vae_stress20",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt"
+      },
+      {
+        "name": "vae_stress20_biased",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt",
+        "latent_bias": "experiments/results/stress_latent_stats_vix20.json",
+        "stress_scale": 1.5,
+        "temperature": 1.0
+      },
+      {
+        "name": "diffusion_stress20",
+        "type": "diffusion",
+        "checkpoint": "experiments/checkpoints/diffusion_stress20/best_model.pt",
+        "vae_checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt"
+      },
+      {
+        "name": "timegan_stress20",
+        "type": "timegan",
+        "checkpoint": "experiments/checkpoints/timegan_stress20/best_model.pt"
+      }
+    ]
+  }
+}

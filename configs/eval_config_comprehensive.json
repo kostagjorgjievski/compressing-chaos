@@ -1,0 +1,73 @@
+{
+  "complete_data_models": {
+    "real_data": "data/processed/finance_windows/sp500_logret_L50_test.npy",
+    "models": [
+      {
+        "name": "vae_complete",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_complete/best_model.pt"
+      },
+      {
+        "name": "diffusion_complete",
+        "type": "diffusion",
+        "checkpoint": "experiments/checkpoints/diffusion_complete/best_model.pt",
+        "vae_checkpoint": "experiments/checkpoints/vae_complete/best_model.pt"
+      },
+      {
+        "name": "timegan_complete",
+        "type": "timegan",
+        "checkpoint": "experiments/checkpoints/timegan_complete/best_model.pt"
+      }
+    ]
+  },
+  "stress20_models": {
+    "real_data": "data/processed/finance_windows/sp500_logret_stress20_L50_test.npy",
+    "models": [
+      {
+        "name": "vae_stress20",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt"
+      },
+      {
+        "name": "vae_stress20_extreme",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt",
+        "latent_bias": "experiments/results/stress_latent_stats_vix20.json",
+        "stress_scale": 2.0,
+        "temperature": 1.2
+      },
+      {
+        "name": "diffusion_stress20",
+        "type": "diffusion",
+        "checkpoint": "experiments/checkpoints/diffusion_stress20/best_model.pt",
+        "vae_checkpoint": "experiments/checkpoints/vae_stress20/best_model.pt"
+      },
+      {
+        "name": "timegan_stress20",
+        "type": "timegan",
+        "checkpoint": "experiments/checkpoints/timegan_stress20/best_model.pt"
+      }
+    ]
+  },
+  "stress25_models": {
+    "real_data": "data/processed/finance_windows/sp500_logret_stress25_L50_test.npy",
+    "models": [
+      {
+        "name": "vae_stress25",
+        "type": "vae",
+        "checkpoint": "experiments/checkpoints/vae_stress25/best_model.pt"
+      },
+      {
+        "name": "diffusion_stress25",
+        "type": "diffusion",
+        "checkpoint": "experiments/checkpoints/diffusion_stress25/best_model.pt",
+        "vae_checkpoint": "experiments/checkpoints/vae_stress25/best_model.pt"
+      },
+      {
+        "name": "timegan_stress25",
+        "type": "timegan",
+        "checkpoint": "experiments/checkpoints/timegan_stress25/best_model.pt"
+      }
+    ]
+  }
+}
