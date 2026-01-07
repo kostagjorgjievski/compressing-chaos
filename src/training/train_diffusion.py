@@ -23,6 +23,9 @@ def parse_args():
     p.add_argument("--hidden_dim", type=int, default=128)
     p.add_argument("--time_embed_dim", type=int, default=64)
 
+    # NEW: choose where your latent .npy lives
+    p.add_argument("--latent_dir", type=str, default="data/processed/finance_latent")
+
     p.add_argument(
         "--device",
         type=str,
@@ -47,18 +50,21 @@ def main():
 
     # ------------- dataset -------------
     train_ds = LatentDataset(
-        split="train",
-        seq_len=args.seq_len,
         name=args.dataset_name,
+        seq_len=args.seq_len,
+        split="train",
+        latent_dir=args.latent_dir,
     )
     val_ds = LatentDataset(
-        split="val",
-        seq_len=args.seq_len,
         name=args.dataset_name,
+        seq_len=args.seq_len,
+        split="val",
+        latent_dir=args.latent_dir,
     )
 
     latent_dim = train_ds.z.shape[1]
     print(f"Latent dim inferred from data: {latent_dim}")
+    print(f"Using latent_dir: {args.latent_dir}")
 
     train_loader = DataLoader(train_ds, batch_size=args.batch_size, shuffle=True, drop_last=True)
     val_loader = DataLoader(val_ds, batch_size=args.batch_size, shuffle=False)
@@ -124,9 +130,9 @@ def main():
             best_val = val_loss
             ckpt = {
                 "epoch": epoch,
-                "state_dict": model.state_dict(),
+                "eps_model_state_dict": model.eps_model.state_dict(),
                 "cfg": cfg.__dict__,
-                "val_loss": val_loss,
+                "val_loss": float(val_loss),
             }
             torch.save(ckpt, save_dir / "best_diffusion.pt")
             print(f"  -> saved new best model with val_loss={val_loss:.4f}")

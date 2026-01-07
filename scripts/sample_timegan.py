@@ -10,6 +10,7 @@ import torch
 
 from src.models.baselines.timegan_wrapper import TimeGAN, TimeGANConfig
 from src.data.datasets import TimeSeriesWindowDataset
+import numpy as np
 
 
 def parse_args():
@@ -132,6 +133,12 @@ def main():
     )
 
     generated_series = generated_series.cpu().numpy()  # [num, T, 1]
+    # -------- Save generated windows for evaluation --------
+    np_path = save_dir / "generated_windows.npy"
+    np.save(np_path, generated_series)
+    print(f"Saved generated windows to {np_path} with shape {generated_series.shape}")
+
+
 
     # -------- Load real examples for comparison --------
     real_ds = TimeSeriesWindowDataset(

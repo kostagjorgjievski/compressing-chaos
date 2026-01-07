@@ -13,104 +13,97 @@ from src.models.vae import TimeSeriesVAE, VAEConfig
 
 def parse_args():
     p = argparse.ArgumentParser()
-    p.add_argument(
-        "--ckpt_path",
-        type=str,
-        default="experiments/checkpoints/vae_mlp_sp500_L50_lat16_beta0p05/best_vae.pt",
-    )
-    p.add_argument("--seq_len", type=int, default=50)
+    p.add_argument("--vae_ckpt", type=str, required=True)
     p.add_argument("--dataset_name", type=str, default="sp500_logret")
-    p.add_argument("--batch_size", type=int, default=256)
-    p.add_argument(
-        "--save_dir",
-        type=str,
-        default="data/processed/finance_latent",
-    )
-    p.add_argument(
-        "--device",
-        type=str,
-        default="cuda" if torch.cuda.is_available() else "cpu",
-    )
-    p.add_argument(
-        "--use_mu",
-        action="store_true",
-        help="If set, use mu as latent; otherwise sample z from posterior.",
-    )
+    p.add_argument("--seq_len", type=int, default=50)
+    p.add_argument("--batch_size", type=int, default=512)
+    p.add_argument("--latent_dir", type=str, default="data/processed/finance_latent")
+    p.add_argument("--device", type=str, default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--use_mu", action="store_true", help="encode using mu only (no sampling)")
     return p.parse_args()
 
 
-def encode_split(
-    model: TimeSeriesVAE,
-    split: str,
-    seq_len: int,
-    dataset_name: str,
-    batch_size: int,
-    device: torch.device,
-) -> np.ndarray:
-    ds = TimeSeriesWindowDataset(split=split, seq_len=seq_len, name=dataset_name)
-    loader = DataLoader(ds, batch_size=batch_size, shuffle=False)
+@torch.no_grad()
+def encode_split(model, loader, device, use_mu):
+    zs = []
+    for x, _ in loader:
+        x = x.to(device)
+        enc = model.encode(x)
 
-    latents = []
+        # Possible return types:
+        # 1) (mu, logvar)
+        # 2) (mu, logvar, extra...)
+        # 3) {"mu": ..., "logvar": ...} or {"mean": ..., "logvar": ...}
+        if isinstance(enc, dict):
+            mu = enc.get("mu", enc.get("mean"))
+            logvar = enc.get("logvar", enc.get("log_var"))
+            if mu is None or logvar is None:
+                raise KeyError(f"encode() dict missing keys. Got: {enc.keys()}")
+        else:
+            # tuple/list
+            if not isinstance(enc, (tuple, list)) or len(enc) < 2:
+                raise ValueError(f"encode() must return (mu, logvar, ...). Got: {type(enc)} {enc}")
+            mu, logvar = enc[0], enc[1]
 
-    model.eval()
-    with torch.no_grad():
-        for x, _ in loader:
-            x = x.to(device)
-            mu, logvar = model.encode(x)
-            # we will mostly use mu, but keep both here for flexibility
-            latents.append(mu.cpu().numpy())
-
-    z_all = np.concatenate(latents, axis=0)  # [N, latent_dim]
-    return z_all
+        if use_mu:
+            z = mu
+        else:
+            z = model.reparameterize(mu, logvar)
+        zs.append(z.cpu().numpy())
+    return np.concatenate(zs, axis=0)
 
 
 def main():
     args = parse_args()
     device = torch.device(args.device)
 
-    ckpt_path = Path(args.ckpt_path)
-    if not ckpt_path.exists():
-        raise FileNotFoundError(f"Checkpoint not found: {ckpt_path}")
+    # load checkpoint
+    ckpt = torch.load(args.vae_ckpt, map_location=device)
 
-    save_dir = Path(args.save_dir)
-    save_dir.mkdir(parents=True, exist_ok=True)
-
-    # -------- load model --------
-    ckpt = torch.load(ckpt_path, map_location=device)
-    cfg_dict = ckpt.get("cfg", {})
-
-    cfg = VAEConfig(
-        input_dim=cfg_dict.get("input_dim", 1),
-        seq_len=cfg_dict.get("seq_len", args.seq_len),
-        hidden_dim=cfg_dict.get("hidden_dim", 128),
-        latent_dim=cfg_dict.get("latent_dim", 16),
-        num_layers=cfg_dict.get("num_layers", 1),
-        beta=cfg_dict.get("beta", 0.05),
-        dropout=cfg_dict.get("dropout", 0.0),
-    )
-
+    cfg = VAEConfig(**ckpt["cfg"])
     model = TimeSeriesVAE(cfg).to(device)
-    model.load_state_dict(ckpt["state_dict"])
-    model.eval()
 
-    print(f"Loaded VAE from {ckpt_path}")
-    print(f"Config: {cfg}")
+    state = None
+
+    # Common key names
+    if isinstance(ckpt, dict):
+        if "state_dict" in ckpt:
+            state = ckpt["state_dict"]
+        elif "model_state_dict" in ckpt:
+            state = ckpt["model_state_dict"]
+        elif "vae_state_dict" in ckpt:
+            state = ckpt["vae_state_dict"]
+        elif "model" in ckpt:
+            # Could be a state_dict OR a full module
+            if isinstance(ckpt["model"], dict):
+                state = ckpt["model"]
+            else:
+                # full module saved
+                model = ckpt["model"].to(device)
+                model.eval()
+
+    # If we found a state_dict, load it
+    if state is not None:
+        model.load_state_dict(state)
+        model.eval()
+
+
+
+    latent_dir = Path(args.latent_dir)
+    latent_dir.mkdir(parents=True, exist_ok=True)
 
     for split in ["train", "val", "test"]:
-        z = encode_split(
-            model=model,
+        ds = TimeSeriesWindowDataset(
             split=split,
             seq_len=args.seq_len,
-            dataset_name=args.dataset_name,
-            batch_size=args.batch_size,
-            device=device,
+            name=args.dataset_name,
         )
+        loader = DataLoader(ds, batch_size=args.batch_size, shuffle=False)
 
-        out_path = save_dir / f"{args.dataset_name}_L{args.seq_len}_latent_{split}.npy"
-        np.save(out_path, z)
-        print(f"{split}: saved {z.shape} to {out_path}")
-
-    print("Done encoding all splits.")
+        z = encode_split(model, loader, device, args.use_mu)
+        out = latent_dir / f"{args.dataset_name}_L{args.seq_len}_latent_{split}.npy"
+        np.save(out, z)
+        print(f"Saved {split}: {z.shape} → {out}")
 
 
 if __name__ == "__main__":
