@@ -5,7 +5,7 @@ This repository contains the full pipeline to reproduce our results on **S&P 500
 
 - A **Gaussian VAE with variance matching** (core representation model)
 - **Latent diffusion models** (unconditional and VIX-conditional)
-- **Baselines** (TimeGAN, ARIMA)
+- **Baselines** (TimeGAN, VAE)
 - A complete **evaluation and stress-testing suite**
 
 The workflow is intentionally modular and reproducible end-to-end.
